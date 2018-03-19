@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"sync"
 
 	"github.com/fireeye/gocrack/server/authentication"
 	"github.com/fireeye/gocrack/server/storage"
@@ -20,17 +19,23 @@ func init() {
 	authentication.Register("ldap", &LDAPAuthPlugin{})
 }
 
+// LDAPAuthPlugin implements Open which is used to register the LDAP provider with the backend
 type LDAPAuthPlugin struct{}
 
+// Open initializes the LDAP Authentication Provider
 func (s *LDAPAuthPlugin) Open(db authentication.AuthStorageBackend, cfg authentication.PluginSettings) (authentication.AuthAPI, error) {
 	return Init(db, cfg)
 }
 
 var (
+	// ErrUserNotFound indicates the user was not found in the authentication backend
 	ErrUserNotFound = errors.New("user not found")
-	ErrMoreThanOne  = errors.New("more than one record has been found")
-	ErrInvalidCert  = errors.New("invalid root ca cert")
-	ErrDisabled     = errors.New("disabled in ldap authentication")
+	// ErrMoreThanOne is returned whenever more than one AD record was returned as we cant properly distinguish which record we should use
+	ErrMoreThanOne = errors.New("more than one record has been found")
+	// ErrInvalidCert is returned whenever the CA cert was given to us for use in the LDAP provider but is invalid
+	ErrInvalidCert = errors.New("invalid root ca cert")
+	// ErrDisabled is returned when a function is called that is not supported by the LDAP provider
+	ErrDisabled = errors.New("disabled in ldap authentication")
 )
 
 func checkForString(in map[string]interface{}, expectedToHave string) (string, error) {
@@ -87,8 +92,6 @@ type Options struct {
 // Backend is an authentication backend that queries an LDAP/Active Directory server for authentication
 type Backend struct {
 	// unexported fields below
-	c     *ldap.Conn
-	mu    *sync.Mutex
 	certp *x509.CertPool
 	db    authentication.AuthStorageBackend
 	*Options
@@ -119,53 +122,39 @@ func Init(db authentication.AuthStorageBackend, cfg authentication.PluginSetting
 	}
 
 	return &Backend{
-		mu:      &sync.Mutex{},
 		Options: rcfg,
 		certp:   pool,
 		db:      db,
 	}, nil
 }
 
-// Close the LDAP client if it's open
+// Close implements authentication.Close but we have nothing to free here.
 func (s *Backend) Close() {
-	if s.c != nil {
-		s.c.Close()
-		s.c = nil
-	}
 	return
 }
 
-func (s *Backend) connect() error {
+func (s *Backend) connect() (*ldap.Conn, error) {
 	var hostname = s.Address
-	// connection has already been established
-	if s.c != nil {
-		return nil
-	}
 
 	if strings.Contains(hostname, ":") {
 		hostname = s.Address[:strings.Index(hostname, ":")]
 	}
 
-	l, err := ldap.DialTLS("tcp", s.Address, &tls.Config{
+	return ldap.DialTLS("tcp", s.Address, &tls.Config{
 		ServerName: hostname,
 		RootCAs:    s.certp,
 	})
-
-	if err != nil {
-		return err
-	}
-
-	s.c = l
-	return nil
 }
 
 func (s *Backend) getUser(username string) (props map[string]string, err error) {
-	if err = s.connect(); err != nil {
-		return
+	l, err := s.connect()
+	if err != nil {
+		return nil, err
 	}
+	defer l.Close()
 
-	if err = s.c.Bind(s.BindDN, s.BindPassword); err != nil {
-		return
+	if err := l.Bind(s.BindDN, s.BindPassword); err != nil {
+		return nil, err
 	}
 
 	attribs := []string{"givenName", "sn", "mail", "uid"}
@@ -177,19 +166,17 @@ func (s *Backend) getUser(username string) (props map[string]string, err error) 
 		nil,
 	)
 
-	sr, err := s.c.Search(searchRequest)
+	sr, err := l.Search(searchRequest)
 	if err != nil {
-		return
+		return nil, err
 	}
 
 	if len(sr.Entries) == 0 {
-		err = ErrUserNotFound
-		return
+		return nil, ErrUserNotFound
 	}
 
 	if len(sr.Entries) > 1 {
-		err = ErrMoreThanOne
-		return
+		return nil, ErrMoreThanOne
 	}
 
 	userDN := sr.Entries[0].DN
@@ -213,8 +200,14 @@ func (s *Backend) Login(username, password string) (*storage.User, error) {
 		return nil, err
 	}
 
+	l, err := s.connect()
+	if err != nil {
+		return nil, err
+	}
+	defer l.Close()
+
 	// Bind as the user to verify their password
-	if err = s.c.Bind(props["dn"], password); err != nil {
+	if err = l.Bind(props["dn"], password); err != nil {
 		return nil, err
 	}
 

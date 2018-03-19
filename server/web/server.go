@@ -29,7 +29,7 @@ type apiError struct {
 	Error string `json:"error"`
 }
 
-// APIValidationErrors describes errors that occured in the validation of a request
+// APIValidationErrors describes errors that occurred in the validation of a request
 type APIValidationErrors struct {
 	Valid  bool     `json:"valid"`
 	Errors []string `json:"validation_errors"`
@@ -133,6 +133,7 @@ func newHTTPServer(cfg Config, s *Server) *http.Server {
 	rootAPIG.Use(s.requestHasValidAuth(), setXSRFTokenIfNecessary(isCSRFEnabled), shared.RecordAPIMetrics(requestDuration, requestCounter))
 	{
 		rootAPIG.GET("/workers/", WrapAPIForError(s.webGetActiveWorkers))
+		rootAPIG.GET("/version/", WrapAPIForError(s.webGetVersion))
 
 		rootAPIG.POST("/task/", WrapAPIForError(s.webCreateTask))
 		rootAPIG.GET("/task/", WrapAPIForError(s.getAvailableTasks))

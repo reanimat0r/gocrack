@@ -76,6 +76,9 @@ type TaskProcess struct {
 	UsingDevices []int
 }
 
+// EngineVersion is a map of the engines contained within the worker along with their engine version
+type EngineVersion map[string]string // map[engine_name]engine_version
+
 // Beacon describes the payload sent by a worker
 type Beacon struct {
 	WorkerVersion  string
@@ -83,6 +86,7 @@ type Beacon struct {
 	RequestNewTask bool
 	Devices        DeviceMap
 	Processes      map[string]TaskProcess // map[taskid]TaskProcess
+	Engines        EngineVersion
 }
 
 // GetIntPtr returns the address of i
@@ -100,7 +104,7 @@ func GetBoolPtr(b bool) *bool {
 	return &b
 }
 
-// IntSliceToString converts a list of integers to a comma seperated list
+// IntSliceToString converts a list of integers to a comma separated list
 func IntSliceToString(ints []int) string {
 	tmp := make([]string, len(ints))
 	for i, v := range ints {

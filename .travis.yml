@@ -1,0 +1,27 @@
+---
+language: go
+
+env:
+  global:
+    - CGO_CFLAGS="-I$HOME/hashcat/deps/OpenCL-Headers -I$HOME/hashcat/include"
+    - CGO_LDFLAGS="-L$HOME/hashcat"
+    - LD_LIBRARY_PATH="/home/travis/hashcat:$LD_LIBRARY_PATH"
+    - HASHCAT_VERSION="v3.6.0"
+
+addons:
+ apt:
+  packages:
+    - ocl-icd-opencl-dev
+
+before_install:
+  - ./misc/setup_travis.sh
+
+go:
+  - "1.10.x"
+  - tip
+
+script:
+  - ./misc/codecov_tests.sh
+
+after_success:
+  - bash <(curl -s https://codecov.io/bash)

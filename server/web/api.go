@@ -3,6 +3,7 @@ package web
 import (
 	"context"
 	"crypto/tls"
+	"fmt"
 	"net"
 	"net/http"
 
@@ -11,6 +12,11 @@ import (
 	"github.com/fireeye/gocrack/server/storage"
 	"github.com/fireeye/gocrack/server/workmgr"
 	"github.com/fireeye/gocrack/shared"
+)
+
+var (
+	serverVersion     string
+	serverCompileTime string
 )
 
 type Server struct {
@@ -32,7 +38,7 @@ func NewServer(cfg Config, stor storage.Backend, wmgr *workmgr.WorkerManager, au
 	if cfg.Listener.UseSSL {
 		tcfg, err := shared.GetTLSConfig(cfg.Listener.Certificate, cfg.Listener.PrivateKey, cfg.Listener.CACertificate)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("Error creating HTTP TLS listener: %s", err)
 		}
 
 		l, err = tls.Listen("tcp", cfg.Listener.Address, tcfg)
@@ -60,6 +66,12 @@ func NewServer(cfg Config, stor storage.Backend, wmgr *workmgr.WorkerManager, au
 // Start the API server and block
 func (s *Server) Start() error {
 	return s.Serve(s.netl)
+}
+
+// SetVersionInfo sets the server version information
+func SetVersionInfo(revision, ctime string) {
+	serverVersion = revision
+	serverCompileTime = ctime
 }
 
 // Stop the HTTP server gracefully
